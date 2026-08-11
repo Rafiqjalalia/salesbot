@@ -1,0 +1,23 @@
+{
+  "name": "whatsflow-saas",
+  "version": "1.0.0",
+  "private": true,
+  "description": "WhatsFlow - AI WhatsApp sales bot SaaS for businesses",
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "install:all": "npm install",
+    "dev": "concurrently -n api,web -c blue,green \"npm run dev --workspace backend\" \"npm run dev --workspace frontend\"",
+    "build": "npm run build --workspace frontend",
+    "start": "npm run build && npm run start --workspace backend",
+    "postinstall": "npm run build --workspace frontend"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  },
+  "dependencies": {
+    "mongodb-memory-server-core": "^10.1.2"
+  }
+}

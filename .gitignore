@@ -1,0 +1,21 @@
+node_modules/
+dist/
+.wdata/
+*.log
+.env
+.DS_Store
+npm-debug.log*
+
+# WhatsApp session caches
+.wwebjs_cache/
+.wwebjs_auth/
+backend/.wwebjs_cache/
+backend/.wdata/
+
+# Local MongoDB data
+backend/.mongo/
+.mongo/
+
+# Sensitive credentials (never commit these!)
+atlas-credentials.env
+*.credentials.env
