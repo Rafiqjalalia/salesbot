@@ -146,6 +146,11 @@ class WhatsAppManager {
 
     const client = new Client({
       authStrategy,
+      // Do NOT download the whole chat history during "ready". That sync is the single
+      // biggest memory/time cost and on low-RAM hosts it OOMs the instance mid-sync.
+      // This bot works off live messages (stored in Mongo as they arrive), so history
+      // is not needed — skipping it makes linking complete in seconds instead of minutes.
+      syncFullHistory: false,
       puppeteer: {
         headless: true,
         defaultViewport: { width: 1280, height: 800 },
