@@ -18,7 +18,7 @@ const businessSchema = new mongoose.Schema({
   // WhatsApp connection state
   whatsappStatus: {
     type: String,
-    enum: ['never', 'connecting', 'qr', 'pairing', 'connected', 'failed', 'disconnected'],
+    enum: ['never', 'connecting', 'qr', 'pairing', 'authenticated', 'connected', 'failed', 'disconnected'],
     default: 'never',
   },
   whatsappError: { type: String, default: '' },

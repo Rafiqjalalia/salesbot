@@ -6,7 +6,7 @@ const STATUS_LABELS = {
   connecting: 'Starting browser…',
   qr: 'Scan the QR code with WhatsApp',
   pairing: 'Waiting for the PIN to be confirmed',
-  authenticated: 'Syncing messages (takes up to 5 mins)…',
+  authenticated: 'Syncing messages (can take 5–20 min)…',
   connected: 'Connected ✓',
   failed: 'Connection failed',
   disconnected: 'Disconnected',
@@ -171,8 +171,8 @@ export default function Connect() {
                   Your device was successfully linked! WhatsApp is now securely downloading your recent chat history to the server.
                 </p>
                 <ul className="tips">
-                  <li>This process usually takes 2 to 5 minutes.</li>
-                  <li>Please leave this page open and wait. Do not disconnect.</li>
+                  <li>This normally takes 5–20 minutes on a cloud server — the phone already shows the device linked.</li>
+                  <li>Leave this page open and wait. Do NOT click Reset during syncing.</li>
                   <li>Once it finishes, this page will automatically update to Connected.</li>
                 </ul>
              </div>

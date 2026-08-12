@@ -200,14 +200,18 @@ class WhatsAppManager {
     client.on('authenticated', safe(async () => {
       clearTimeout(st._watchdog);
       st.status = 'authenticated';
-      // After a reboot the saved session can authenticate but then never reach the "ready"
-      // sync (headless WhatsApp Web stuck on the loading screen, common on slow machines
-      // while it re-syncs a long chat history). Wait generously, then retry the whole boot
-      // a couple of times — the second boot on a warm profile usually completes. Only after
-      // all attempts ask the owner to re-link with a fresh QR code.
+      console.log(`[wa] device authenticated for business ${key} — syncing (can take 5–20 min on a slow server)`);
+      await Business.updateOne({ _id: businessId }, { whatsappStatus: 'authenticated', whatsappError: '' });
+
+      // After linking (or after a reboot with a saved session) the client must finish the
+      // "ready" sync before it can send/receive. On slow/low-CPU hosts this routinely takes
+      // 5–20 minutes, so a short timeout here would kill the client mid-sync and force an
+      // endless re-link loop. Wait 20 minutes before considering it stuck. Only after all
+      // attempts does it ask the owner to reset — a fresh re-scan right after a successful
+      // link is usually refused by WhatsApp anyway.
       st._readyWatchdog = setTimeout(async () => {
         if (st.status !== 'authenticated') return;
-        console.warn(`[wa] session stuck after authentication for business ${key} (attempt ${st._attempt})`);
+        console.warn(`[wa] sync still not finished after 20 min for business ${key} (attempt ${st._attempt})`);
         try {
           await st.client.destroy();
         } catch {
@@ -215,7 +219,7 @@ class WhatsAppManager {
         }
         if (this.clients.get(key) === st) this.clients.delete(key);
         if (st._attempt < 3) {
-          // Give the old browser a full second to release the profile dir before relaunching,
+          // Give the old browser time to release the profile dir before relaunching,
           // otherwise the next launch collides with "browser is already running".
           await sleep(12000);
           killChromeForProfile(path.join(env.dataDir, key));
@@ -225,11 +229,11 @@ class WhatsAppManager {
           return;
         }
         st.status = 'failed';
-        st.lastError = 'The saved session is stuck while syncing. Please reconnect by scanning a fresh QR code.';
+        st.lastError = 'The WhatsApp session is stuck while syncing messages. Reset the connection and link again.';
         st._giveUp = true;
-        console.warn(`[wa] session stuck after authentication for business ${key} — asking for re-link`);
+        console.warn(`[wa] session stuck while syncing for business ${key} — asking for a reset`);
         await Business.updateOne({ _id: businessId }, { whatsappStatus: 'failed', whatsappError: st.lastError });
-      }, 240000);
+      }, 1200000);
     }));
 
     client.on('ready', safe(async () => {
