@@ -9,6 +9,11 @@ const { env } = require('../config/env');
 const router = express.Router();
 router.use(auth);
 
+// Throttle auto-reconnects triggered from the status poll (one attempt per business
+// every 10s). Without this, every status request would boot a new browser when the
+// in-memory client is missing, which is exactly what happens after a server restart.
+const autoReconnect = new Map(); // businessId -> last attempt timestamp
+
 async function getBusiness(req, res) {
   const business = await Business.findOne({ user: req.userId });
   if (!business) {
@@ -58,12 +63,19 @@ router.get('/connect/status', async (req, res) => {
   if (!business) return;
   const st = wa.state(business._id);
 
-  // A status like 'qr'/'connecting' stored in the DB but with NO live client is stale
-  // (e.g. the server restarted). Report it as not-started so the UI shows the Start button
-  // instead of waiting forever on a QR that will never come.
-  if (!st && ['connecting', 'qr', 'pairing'].includes(business.whatsappStatus)) {
-    await Business.updateOne({ _id: business._id }, { whatsappStatus: 'never', whatsappError: '' });
-    return res.json({ status: 'never', qr: null, pairingCode: null, error: '' });
+  // A connection that should be live (linking or connected) but has NO live client means the
+  // server restarted or the instance was recycled. Instead of silently resetting to "never",
+  // kick off a reconnect automatically so a fresh QR shows up in the dashboard by itself.
+  if (!st && ['connecting', 'qr', 'pairing', 'authenticated', 'connected'].includes(business.whatsappStatus)) {
+    const key = String(business._id);
+    const last = autoReconnect.get(key) || 0;
+    if (Date.now() - last > 10000) {
+      autoReconnect.set(key, Date.now());
+      wa.connect(business._id).catch((e) =>
+        console.error(`[connect] auto-reconnect failed for ${key}:`, (e && e.message) || e)
+      );
+    }
+    return res.json({ status: 'connecting', qr: null, pairingCode: null, error: '' });
   }
 
   const state = st || { status: business.whatsappStatus, qr: null, pairingCode: null, lastError: business.whatsappError };

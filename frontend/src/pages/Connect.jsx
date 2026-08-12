@@ -33,6 +33,7 @@ export default function Connect() {
 
   useEffect(() => {
     load();
+    poll.current = setInterval(load, 2000);
     return () => clearInterval(poll.current);
   }, []);
 
@@ -41,8 +42,6 @@ export default function Connect() {
     setMsg('');
     await api('/api/business/connect', { method: 'POST' });
     load();
-    clearInterval(poll.current);
-    poll.current = setInterval(load, 2000);
   };
 
   const getPin = async () => {
@@ -63,7 +62,6 @@ export default function Connect() {
   };
 
   const disconnect = async () => {
-    clearInterval(poll.current);
     await api('/api/business/disconnect', { method: 'POST' });
     setPin('');
     setMsg('');
