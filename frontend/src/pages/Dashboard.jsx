@@ -41,7 +41,7 @@ export default function Dashboard() {
 
   const maxRev = Math.max(1, ...data.daily.map((d) => d.revenue));
   const statusColor =
-    data.bot.whatsappStatus === 'connected' ? 'ok' : data.bot.whatsappStatus === 'never' ? 'muted' : 'warn';
+    data.bot.whatsappStatus === 'connected' ? 'ok' : data.bot.whatsappStatus === 'authenticated' ? 'warn' : data.bot.whatsappStatus === 'never' ? 'muted' : 'warn';
 
   const toggle = async () => {
     await api('/api/business/session', { method: 'POST', body: { active: !data.bot.active } });
@@ -54,7 +54,7 @@ export default function Dashboard() {
         <div>
           <h1>Dashboard</h1>
           <p className="muted">
-            Store is <span className={`status-dot ${data.bot.active ? 'on' : 'off'}`} /> {data.bot.active ? 'OPEN' : 'CLOSED'} · WhatsApp {data.bot.whatsappStatus}
+            Store is <span className={`status-dot ${data.bot.active ? 'on' : 'off'}`} /> {data.bot.active ? 'OPEN' : 'CLOSED'} · WhatsApp {data.bot.whatsappStatus === 'authenticated' ? 'Syncing...' : data.bot.whatsappStatus}
           </p>
         </div>
         <button className={`btn ${data.bot.active ? 'ghost-danger' : 'success'}`} onClick={toggle}>
@@ -72,6 +72,12 @@ export default function Dashboard() {
           </React.Fragment>
         ))}
       </div>
+      
+      {data.bot.whatsappStatus === 'authenticated' && (
+        <div className="alert warn" style={{ marginBottom: '20px' }}>
+          <strong>WhatsApp is currently syncing your recent messages.</strong> This process is completely normal for a newly linked device, but it can take up to 5 minutes to finish depending on your chat history size. The dashboard will automatically update to "Connected" when it's done. Please do not restart or disconnect.
+        </div>
+      )}
 
       <div className="stat-grid">
         <div className="stat-card">

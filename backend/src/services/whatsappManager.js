@@ -152,6 +152,7 @@ class WhatsAppManager {
       },
       puppeteer: {
         headless: true,
+        defaultViewport: { width: 1280, height: 800 },
         args: [
           '--no-sandbox',
           '--disable-setuid-sandbox',

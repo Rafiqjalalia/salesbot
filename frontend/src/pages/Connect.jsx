@@ -6,7 +6,7 @@ const STATUS_LABELS = {
   connecting: 'Starting browser…',
   qr: 'Scan the QR code with WhatsApp',
   pairing: 'Waiting for the PIN to be confirmed',
-  authenticated: 'Authenticated — finalizing…',
+  authenticated: 'Syncing messages (takes up to 5 mins)…',
   connected: 'Connected ✓',
   failed: 'Connection failed',
   disconnected: 'Disconnected',
@@ -155,6 +155,21 @@ export default function Connect() {
                 </div>
               )}
             </div>
+          )}
+
+          {status.status === 'authenticated' && (
+             <div className="idle-box">
+                <div className="big-icon">⏳</div>
+                <h2>Syncing your messages</h2>
+                <p className="muted">
+                  Your device was successfully linked! WhatsApp is now securely downloading your recent chat history to the server.
+                </p>
+                <ul className="tips">
+                  <li>This process usually takes 2 to 5 minutes.</li>
+                  <li>Please leave this page open and wait. Do not disconnect.</li>
+                  <li>Once it finishes, this page will automatically update to Connected.</li>
+                </ul>
+             </div>
           )}
 
           {!polling && status.status !== 'connected' && (

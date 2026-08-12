@@ -1,10 +1,23 @@
+require('dotenv').config();
 const mongoose = require('mongoose');
-const Business = require('./src/models/Business');
-(async () => {
-  const port = process.argv[2];
-  await mongoose.connect(`mongodb://127.0.0.1:${port}/whatsflow`, { serverSelectionTimeoutMS: 10000 });
-  const r = await Business.updateMany({}, { $set: { whatsappStatus: 'connecting', whatsappError: '' } });
-  console.log('reset', r.modifiedCount, 'business(es) to connecting');
-  await mongoose.disconnect();
+
+async function resetAuth() {
+  console.log('Connecting to MongoDB...');
+  await mongoose.connect(process.env.MONGODB_URI);
+  console.log('Connected.');
+  
+  const db = mongoose.connection.db;
+  const collections = await db.listCollections().toArray();
+  
+  for (const c of collections) {
+    if (c.name.startsWith('whatsapp-RemoteAuth-')) {
+      console.log('Dropping collection:', c.name);
+      await db.collection(c.name).drop();
+    }
+  }
+  
+  console.log('Reset complete!');
   process.exit(0);
-})().catch((e) => { console.error(e.message); process.exit(1); });
+}
+
+resetAuth().catch(console.error);
