@@ -103,7 +103,7 @@ class WhatsAppManager {
   }
 
   async initAll() {
-    const businesses = await Business.find({ whatsappStatus: { $in: ['connected', 'connecting', 'pairing', 'qr'] } });
+    const businesses = await Business.find({ whatsappStatus: { $in: ['connected', 'connecting', 'pairing', 'qr', 'authenticated'] } });
     for (const b of businesses) {
       try {
         await this.connect(b._id);
@@ -159,6 +159,8 @@ class WhatsAppManager {
           '--disable-dev-shm-usage',
           '--disable-gpu',
           '--disable-extensions',
+          '--disable-features=site-per-process',
+          '--js-flags="--max-old-space-size=256"',
           '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
           // Low-memory / cloud-hosting flags
           '--disable-software-rasterizer',
