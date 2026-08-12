@@ -64,8 +64,8 @@ export default function Connect() {
   const disconnect = async () => {
     await api('/api/business/disconnect', { method: 'POST' });
     setPin('');
-    setMsg('');
     setStatus({ status: 'disconnected', qr: null, pairingCode: null, error: '' });
+    setMsg('Saved WhatsApp session cleared. If the phone just refused to link, wait 5–10 minutes before starting a fresh connection — WhatsApp temporarily blocks too many link attempts.');
   };
 
   const polling = ['connecting', 'qr', 'pairing', 'authenticated'].includes(status.status);
@@ -80,6 +80,14 @@ export default function Connect() {
         {status.status === 'connected' ? (
           <button className="btn ghost-danger" onClick={disconnect}>
             Disconnect
+          </button>
+        ) : polling || status.status === 'connecting' ? (
+          <button
+            className="btn ghost-danger"
+            onClick={disconnect}
+            title="Clears the saved session so you can start over with a fresh QR"
+          >
+            Reset connection
           </button>
         ) : (
           !polling && status.status !== 'connecting' && (
@@ -187,6 +195,22 @@ export default function Connect() {
           )}
 
           {status.status === 'failed' && status.error && <div className="alert error">{status.error}</div>}
+          {status.status === 'failed' && (
+            <div className="idle-box">
+              <div className="big-icon">📵</div>
+              <h2>Linking was refused</h2>
+              <p className="muted">
+                If your phone said it <strong>couldn't link the device</strong>, WhatsApp is usually blocking the
+                attempt, not your code.
+              </p>
+              <ul className="tips">
+                <li>Wait 5–10 minutes before retrying — WhatsApp temporarily blocks too-quick link attempts.</li>
+                <li>Click <strong>Reset connection</strong> first to clear the old half-saved session, then Start connection for a fresh QR.</li>
+                <li>Scan the QR with WhatsApp → <strong>Linked devices</strong> → <strong>Link a device</strong>.</li>
+                <li>If it still refuses, try the <strong>Get PIN</strong> option above, or wait a few hours and try again.</li>
+              </ul>
+            </div>
+          )}
         </div>
 
         <div className="panel">
