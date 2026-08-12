@@ -6,7 +6,7 @@ const STATUS_LABELS = {
   connecting: 'Starting browser…',
   qr: 'Scan the QR code with WhatsApp',
   pairing: 'Waiting for the PIN to be confirmed',
-  authenticated: 'Syncing messages (can take 5–20 min)…',
+  authenticated: 'Finishing connection…',
   connected: 'Connected ✓',
   failed: 'Connection failed',
   disconnected: 'Disconnected',
@@ -125,7 +125,7 @@ export default function Connect() {
             </div>
           )}
 
-          {polling && (
+          {polling && status.status !== 'authenticated' && (
             <div className="qr-area">
               <h2>Step 1 — Scan the QR code</h2>
               <p className="muted">Open WhatsApp on your phone → Menu → Linked devices → Link a device.</p>
@@ -166,14 +166,14 @@ export default function Connect() {
           {status.status === 'authenticated' && (
              <div className="idle-box">
                 <div className="big-icon">⏳</div>
-                <h2>Syncing your messages</h2>
+                <h2>Finishing connection</h2>
                 <p className="muted">
-                  Your device was successfully linked! WhatsApp is now securely downloading your recent chat history to the server.
+                  Your phone accepted the link. The server is completing the connection — this usually takes a few seconds.
                 </p>
                 <ul className="tips">
-                  <li>This normally takes 5–20 minutes on a cloud server — the phone already shows the device linked.</li>
-                  <li>Leave this page open and wait. Do NOT click Reset during syncing.</li>
-                  <li>Once it finishes, this page will automatically update to Connected.</li>
+                  <li>Your phone already shows the device as linked — that is normal.</li>
+                  <li>Leave this page open. It will switch to Connected automatically.</li>
+                  <li>If it stays here for more than 2 minutes, click Reset connection and scan again.</li>
                 </ul>
              </div>
           )}

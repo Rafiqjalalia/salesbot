@@ -102,6 +102,63 @@ class WhatsAppManager {
     return this.clients.get(String(businessId));
   }
 
+  _clearPromotePoll(st) {
+    if (st._promoteTimer) {
+      clearInterval(st._promoteTimer);
+      st._promoteTimer = null;
+    }
+  }
+
+  async _markConnected(businessId, st, client) {
+    if (st.status === 'connected') return;
+    clearTimeout(st._watchdog);
+    clearTimeout(st._readyWatchdog);
+    this._clearPromotePoll(st);
+    st.status = 'connected';
+    st.qr = null;
+    st.pairingCode = null;
+
+    let wid = '';
+    if (client.info) {
+      if (client.info.wid && client.info.wid.user) wid = client.info.wid.user;
+      else if (client.info.me && client.info.me.user) wid = client.info.me.user;
+    }
+
+    await Business.updateOne({ _id: businessId }, {
+      whatsappStatus: 'connected',
+      whatsappError: '',
+      ...(wid ? { whatsappNumber: wid } : {}),
+    });
+    console.log(`[wa] client ready for business ${String(businessId)} (number ${wid || 'unknown'})`);
+  }
+
+  // whatsapp-web.js sometimes fires "authenticated" but never "ready" on low-RAM hosts.
+  // Poll WA state and promote to connected as soon as the socket is actually live.
+  _startConnectedPoll(businessId, st) {
+    this._clearPromotePoll(st);
+    let tries = 0;
+    st._promoteTimer = setInterval(async () => {
+      if (st.status !== 'authenticated') {
+        this._clearPromotePoll(st);
+        return;
+      }
+      tries += 1;
+      try {
+        const waState = await st.client.getState();
+        if (waState === 'CONNECTED' && st.client.info) {
+          await this._markConnected(businessId, st, st.client);
+          return;
+        }
+        // After ~30s of CONNECTED-ish progress, accept connected even if info lags
+        if (tries >= 10 && waState === 'CONNECTED') {
+          await this._markConnected(businessId, st, st.client);
+        }
+      } catch (e) {
+        console.warn(`[wa] connected poll error (${String(businessId)}):`, (e && e.message) || e);
+      }
+    }, 3000);
+  }
+
   async initAll() {
     const businesses = await Business.find({ whatsappStatus: { $in: ['connected', 'connecting', 'pairing', 'qr', 'authenticated'] } });
     for (const b of businesses) {
@@ -137,7 +194,8 @@ class WhatsAppManager {
       const store = new MongoStore({ mongoose });
       authStrategy = new RemoteAuth({
         store: store,
-        backupSyncIntervalMs: 300000,
+        // Save session soon after QR scan so a Render restart doesn't lose creds
+        backupSyncIntervalMs: 60000,
         clientId: key,
       });
     } else {
@@ -205,8 +263,11 @@ class WhatsAppManager {
     client.on('authenticated', safe(async () => {
       clearTimeout(st._watchdog);
       st.status = 'authenticated';
-      console.log(`[wa] device authenticated for business ${key} — syncing (can take 5–20 min on a slow server)`);
+      st.qr = null;
+      st.pairingCode = null;
+      console.log(`[wa] device authenticated for business ${key} — finishing link`);
       await Business.updateOne({ _id: businessId }, { whatsappStatus: 'authenticated', whatsappError: '' });
+      this._startConnectedPoll(businessId, st);
 
       // After linking (or after a reboot with a saved session) the client must finish the
       // "ready" sync before it can send/receive. On slow/low-CPU hosts this routinely takes
@@ -242,29 +303,26 @@ class WhatsAppManager {
     }));
 
     client.on('ready', safe(async () => {
-      clearTimeout(st._watchdog);
-      clearTimeout(st._readyWatchdog);
-      st.status = 'connected';
-      st.qr = null;
-      st.pairingCode = null;
-      
-      let wid = '';
-      if (client.info) {
-        if (client.info.wid && client.info.wid.user) wid = client.info.wid.user;
-        else if (client.info.me && client.info.me.user) wid = client.info.me.user;
+      await this._markConnected(businessId, st, client);
+    }));
+
+    client.on('change_state', safe(async (state) => {
+      if (state !== 'CONNECTED') return;
+      if (st.status === 'qr' || st.status === 'pairing' || st.status === 'connecting') {
+        st.status = 'authenticated';
+        st.qr = null;
+        st.pairingCode = null;
+        await Business.updateOne({ _id: businessId }, { whatsappStatus: 'authenticated', whatsappError: '' });
       }
-      
-      await Business.updateOne({ _id: businessId }, {
-        whatsappStatus: 'connected',
-        whatsappError: '',
-        ...(wid ? { whatsappNumber: wid } : {}),
-      });
-      console.log(`[wa] client ready for business ${key} (number ${wid || 'unknown'})`);
+      if (st.status === 'authenticated') {
+        this._startConnectedPoll(businessId, st);
+      }
     }));
 
     client.on('auth_failure', safe(async (msg) => {
       clearTimeout(st._watchdog);
       clearTimeout(st._readyWatchdog);
+      this._clearPromotePoll(st);
       st.status = 'failed';
       st.lastError = String(msg || 'Authentication failed');
       await Business.updateOne({ _id: businessId }, { whatsappStatus: 'failed', whatsappError: st.lastError });
@@ -273,6 +331,7 @@ class WhatsAppManager {
     client.on('disconnected', safe(async (reason) => {
       clearTimeout(st._watchdog);
       clearTimeout(st._readyWatchdog);
+      this._clearPromotePoll(st);
       console.warn(`[wa] client disconnected (${key}): ${reason}`);
       st.status = 'disconnected';
       st.lastError = String(reason || 'disconnected');
@@ -300,7 +359,10 @@ class WhatsAppManager {
   async connect(businessId, attempt = 1) {
     const key = String(businessId);
     const existing = this.clients.get(key);
-    if (existing && (existing.status === 'connecting' || existing.status === 'connected' || existing.status === 'qr')) {
+    if (
+      existing &&
+      ['connecting', 'connected', 'qr', 'authenticated', 'pairing'].includes(existing.status)
+    ) {
       return existing;
     }
     // Any leftover client (failed / disconnected / pairing) must be fully destroyed first,
@@ -360,6 +422,7 @@ class WhatsAppManager {
     } catch (e) {
       clearTimeout(st._watchdog);
       clearTimeout(st._readyWatchdog);
+      this._clearPromotePoll(st);
       try {
         await st.client.destroy();
       } catch {
