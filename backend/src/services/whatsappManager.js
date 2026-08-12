@@ -436,6 +436,16 @@ class WhatsAppManager {
     // remove stored session so a fresh QR is required next time
     const dataPath = path.join(env.dataDir, key);
     fs.rmSync(dataPath, { recursive: true, force: true });
+    
+    // clear RemoteAuth if using MongoDB
+    try {
+      if (mongoose.connection && mongoose.connection.db) {
+        await mongoose.connection.db.collection(`whatsapp-RemoteAuth-${key}.files`).drop().catch(() => {});
+        await mongoose.connection.db.collection(`whatsapp-RemoteAuth-${key}.chunks`).drop().catch(() => {});
+      }
+    } catch (e) {
+      // ignore
+    }
   }
 
   async syncCatalog(businessId) {
