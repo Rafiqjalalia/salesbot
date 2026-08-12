@@ -34,7 +34,7 @@ export default function Dashboard() {
 
   const s = data.stats;
   const setup = [
-    { done: !!business?.whatsappNumber, label: 'Connect WhatsApp', to: '/connect' },
+    { done: data.bot.whatsappStatus === 'connected', label: 'Connect WhatsApp', to: '/connect' },
     { done: data.stats.catalogCount > 0, label: 'Add products to catalog', to: '/catalog' },
     { done: !!business?.ownerNumber, label: 'Set your owner number for orders', to: '/settings' },
   ];

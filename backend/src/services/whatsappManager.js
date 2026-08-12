@@ -154,9 +154,23 @@ class WhatsAppManager {
           '--disable-dev-shm-usage',
           '--disable-gpu',
           '--disable-extensions',
+          // Low-memory / cloud-hosting flags
+          '--disable-software-rasterizer',
+          '--disable-background-networking',
+          '--disable-default-apps',
+          '--disable-sync',
+          '--disable-translate',
+          '--no-first-run',
+          '--mute-audio',
+          '--hide-scrollbars',
+          '--disable-background-timer-throttling',
+          '--disable-backgrounding-occluded-windows',
+          '--disable-renderer-backgrounding',
+          '--disable-ipc-flooding-protection',
         ],
         ...(chrome ? { executablePath: chrome } : {}),
       },
+
       ...(pairingPhone ? { pairWithPhoneNumber: { phoneNumber: pairingPhone, showNotification: true } } : {}),
     });
 
@@ -222,13 +236,19 @@ class WhatsAppManager {
       st.status = 'connected';
       st.qr = null;
       st.pairingCode = null;
-      const wid = client.info && client.info.wid ? client.info.wid.user : '';
+      
+      let wid = '';
+      if (client.info) {
+        if (client.info.wid && client.info.wid.user) wid = client.info.wid.user;
+        else if (client.info.me && client.info.me.user) wid = client.info.me.user;
+      }
+      
       await Business.updateOne({ _id: businessId }, {
         whatsappStatus: 'connected',
         whatsappError: '',
         ...(wid ? { whatsappNumber: wid } : {}),
       });
-      console.log(`[wa] client ready for business ${key} (number ${wid})`);
+      console.log(`[wa] client ready for business ${key} (number ${wid || 'unknown'})`);
     }));
 
     client.on('auth_failure', safe(async (msg) => {
