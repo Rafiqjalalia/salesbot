@@ -16,6 +16,9 @@ backend/.wdata/
 backend/.mongo/
 .mongo/
 
+# Local tooling downloads
+.tools/
+
 # Sensitive credentials (never commit these!)
 atlas-credentials.env
 *.credentials.env
