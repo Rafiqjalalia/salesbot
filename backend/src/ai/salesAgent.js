@@ -1,12 +1,16 @@
 const { chat, hasKey } = require('../services/groq');
 const { env } = require('../config/env');
 
+function productPageUrl(slug) {
+  return `${env.publicUrl}/p/${slug}`;
+}
+
 function buildSystemPrompt(business, catalog) {
   const currency = business.currency || 'USD';
   const items = catalog
     .map(
       (i) =>
-        `- ${i.title} | Price: ${currency} ${i.price} | Link: ${env.publicUrl}/p/${i.slug} | Description: ${(i.description || '').slice(0, 200)}`
+        `- ${i.title} | slug: ${i.slug} | Price: ${currency} ${i.price} | Link: ${productPageUrl(i.slug)} | Image: ${i.imageUrl || 'none'} | Description: ${(i.description || '').slice(0, 200)}`
     )
     .join('\n');
 
@@ -19,12 +23,12 @@ Business info:
 - Description: ${business.description || 'n/a'}
 - Currency: ${currency}
 
-Available products (send the product link when the customer shows interest):
+Available products (when showing a product, put its slug in the "products" array — the bot sends the photo automatically):
 ${items || '(no products configured yet)'}
 
 RULES:
 1. Be friendly, warm, concise and persuasive. Use the customer's language.
-2. When a customer asks about a product, give details from the catalog and ALWAYS include its link.
+2. When a customer asks about a product, give details from the catalog. Include its link using the exact Link URL from the catalog (never localhost).
 3. Gently convince the customer to buy: highlight benefits, offer to help choose, mention availability.
 4. When the customer agrees to buy, confirm the order clearly (items, quantity, total price) and set action to "order".
 5. Ask for customer name if not known.
@@ -35,6 +39,7 @@ You MUST reply with a single JSON object exactly shaped like this:
 {
   "reply": "the message text to send to the customer",
   "action": "none" | "order" | "handover",
+  "products": ["product-slug"],
   "customerName": "name if known, else empty string",
   "order": {
     "items": [ { "title": "...", "qty": 1, "price": 0 } ],
@@ -42,7 +47,7 @@ You MUST reply with a single JSON object exactly shaped like this:
     "note": "optional short note"
   }
 }
-For action "none" the order field should be an empty object.`;
+For action "none" the order field should be an empty object. Set "products" to the slug(s) of any catalog item you are showcasing (empty array if none).`;
 }
 
 function toChatMessage(from, text) {
@@ -72,6 +77,9 @@ async function generateReply({ business, catalog, history, customerText }) {
   return {
     reply: String(parsed.reply || '').trim(),
     action: ['order', 'handover', 'none'].includes(parsed.action) ? parsed.action : 'none',
+    products: Array.isArray(parsed.products)
+      ? parsed.products.map((s) => String(s || '').trim()).filter(Boolean)
+      : [],
     customerName: String(parsed.customerName || '').trim(),
     order: parsed.order && typeof parsed.order === 'object' ? parsed.order : {},
     _raw: raw,

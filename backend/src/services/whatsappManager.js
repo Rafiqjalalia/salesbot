@@ -71,6 +71,63 @@ function customerAddress(msg) {
   return { jid, number };
 }
 
+function productPageUrl(slug) {
+  return `${env.publicUrl}/p/${slug}`;
+}
+
+// Rewrite any localhost links the AI may emit when PUBLIC_URL was missing at prompt time.
+function rewritePublicUrls(text) {
+  return String(text || '').replace(/https?:\/\/localhost(?::\d+)?/gi, env.publicUrl);
+}
+
+function resolveImagePayload(imageUrl) {
+  const raw = String(imageUrl || '').trim();
+  if (!raw) return null;
+
+  if (/^https?:\/\//i.test(raw)) {
+    return looksLikeImage(raw) ? { url: raw } : null;
+  }
+
+  if (raw.startsWith('/')) {
+    const absolute = `${env.publicUrl}${raw}`;
+    return looksLikeImage(absolute) ? { url: absolute } : null;
+  }
+
+  try {
+    if (fs.existsSync(raw)) {
+      return fs.readFileSync(raw);
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+function findProductsInReply(result, catalog) {
+  const slugs = new Set();
+  if (Array.isArray(result.products)) {
+    for (const s of result.products) {
+      const slug = String(s || '').trim().toLowerCase();
+      if (slug) slugs.add(slug);
+    }
+  }
+  const reply = String(result.reply || '');
+  for (const m of reply.matchAll(/\/p\/([a-z0-9-]+)/gi)) {
+    slugs.add(m[1].toLowerCase());
+  }
+
+  const matched = [];
+  const seen = new Set();
+  for (const item of catalog) {
+    const slug = String(item.slug || '').toLowerCase();
+    if (slugs.has(slug) && !seen.has(String(item._id))) {
+      matched.push(item);
+      seen.add(String(item._id));
+    }
+  }
+  return matched;
+}
+
 function messageText(msg, { getContentType, extractMessageContent }) {
   const content = extractMessageContent(msg.message);
   if (!content) return '';
@@ -163,7 +220,7 @@ class WhatsAppManager {
       throw new Error('Missing jid or text');
     }
 
-    const body = String(text);
+    const body = rewritePublicUrls(String(text));
     console.log(`[wa] sendMessage start (${label}) -> ${jid} (${body.length} chars)`);
     try {
       const result = await st.sock.sendMessage(jid, { text: body });
@@ -175,6 +232,69 @@ class WhatsAppManager {
       console.error(`[wa] sendMessage failed (${label}) -> ${jid}:`, (e && e.message) || e);
       throw e;
     }
+  }
+
+  async sendWhatsAppProduct(st, jid, item, business, label = 'product') {
+    if (!st?.sock) {
+      console.error(`[wa] send skipped (${label}): no live socket`);
+      throw new Error('WhatsApp socket not connected');
+    }
+    if (!jid || !item) throw new Error('Missing jid or product');
+
+    const currency = business.currency || 'USD';
+    const link = productPageUrl(item.slug);
+    const desc = String(item.description || '').trim();
+    const caption = rewritePublicUrls(
+      [`${item.title} — ${currency} ${Number(item.price).toFixed(2)}`, desc, link].filter(Boolean).join('\n')
+    );
+
+    const imagePayload = resolveImagePayload(item.imageUrl);
+    console.log(
+      `[wa] sendMessage start (${label}) -> ${jid} product=${item.slug} image=${imagePayload ? 'yes' : 'no'}`
+    );
+
+    try {
+      let result;
+      if (imagePayload) {
+        if (Buffer.isBuffer(imagePayload)) {
+          result = await st.sock.sendMessage(jid, { image: imagePayload, caption });
+        } else {
+          result = await st.sock.sendMessage(jid, { image: imagePayload, caption });
+        }
+      } else {
+        result = await st.sock.sendMessage(jid, { text: caption });
+      }
+      console.log(
+        `[wa] sendMessage ok (${label}) -> ${jid} id=${result?.key?.id || 'unknown'}`
+      );
+      return result;
+    } catch (e) {
+      console.error(`[wa] sendMessage failed (${label}) -> ${jid}:`, (e && e.message) || e);
+      throw e;
+    }
+  }
+
+  async deliverAiReply(st, replyJid, result, catalog, business, businessId, conversationId, number) {
+    const products = findProductsInReply(result, catalog);
+    for (const item of products) {
+      try {
+        await this.sendWhatsAppProduct(st, replyJid, item, business, `product-${item.slug}`);
+      } catch (e) {
+        console.error(`[wa] product send failed for ${item.slug}:`, (e && e.message) || e);
+      }
+    }
+
+    const replyText = rewritePublicUrls(result.reply);
+    if (replyText.trim()) {
+      await this.sendWhatsAppText(st, replyJid, replyText, 'ai-reply');
+    }
+    await ChatMessage.create({
+      business: businessId,
+      conversationId,
+      from: 'ai',
+      number,
+      text: result.reply,
+    });
   }
 
   async _loadAuth(businessId) {
@@ -686,8 +806,7 @@ class WhatsAppManager {
     }
 
     if (result.reply) {
-      await this.sendWhatsAppText(st, replyJid, result.reply, 'ai-reply');
-      await ChatMessage.create({ business: businessId, conversationId, from: 'ai', number, text: result.reply });
+      await this.deliverAiReply(st, replyJid, result, catalog, business, businessId, conversationId, number);
     }
     await this.bumpSession(businessId);
   }
