@@ -63,6 +63,14 @@ function toJid(number) {
   return n ? `${n}@s.whatsapp.net` : '';
 }
 
+// Baileys v7 often addresses customers via @lid; replies must use the same JID
+// (or remoteJidAlt when present), not a phone number rebuilt as @s.whatsapp.net.
+function customerAddress(msg) {
+  const jid = String(msg.key.remoteJidAlt || msg.key.remoteJid || '');
+  const number = jidToNumber(msg.key.remoteJidAlt || msg.key.remoteJid || '');
+  return { jid, number };
+}
+
 function messageText(msg, { getContentType, extractMessageContent }) {
   const content = extractMessageContent(msg.message);
   if (!content) return '';
@@ -143,6 +151,30 @@ class WhatsAppManager {
 
   state(businessId) {
     return this.clients.get(String(businessId));
+  }
+
+  async sendWhatsAppText(st, jid, text, label = 'message') {
+    if (!st?.sock) {
+      console.error(`[wa] send skipped (${label}): no live socket`);
+      throw new Error('WhatsApp socket not connected');
+    }
+    if (!jid || !String(text || '').trim()) {
+      console.error(`[wa] send skipped (${label}): missing jid or text`);
+      throw new Error('Missing jid or text');
+    }
+
+    const body = String(text);
+    console.log(`[wa] sendMessage start (${label}) -> ${jid} (${body.length} chars)`);
+    try {
+      const result = await st.sock.sendMessage(jid, { text: body });
+      console.log(
+        `[wa] sendMessage ok (${label}) -> ${jid} id=${result?.key?.id || 'unknown'}`
+      );
+      return result;
+    } catch (e) {
+      console.error(`[wa] sendMessage failed (${label}) -> ${jid}:`, (e && e.message) || e);
+      throw e;
+    }
   }
 
   async _loadAuth(businessId) {
@@ -578,8 +610,8 @@ class WhatsAppManager {
     const st = this.clients.get(key);
     if (!st || st.status !== 'connected' || !st.sock) return;
 
-    const number = jidToNumber(remoteJid);
-    if (!number) return;
+    const { jid: replyJid, number } = customerAddress(msg);
+    if (!replyJid || !number) return;
 
     const conversationId = cid(number);
     const text = messageText(msg, helpers).trim();
@@ -598,7 +630,7 @@ class WhatsAppManager {
     }
 
     if (!business.botActive || !business.settings.autoReply) {
-      await this.sendIfNeeded(st.sock, businessId, number, business.settings.awayMessage || '', conversationId);
+      await this.sendIfNeeded(st, businessId, replyJid, number, business.settings.awayMessage || '', conversationId);
       return;
     }
 
@@ -621,21 +653,18 @@ class WhatsAppManager {
       result.action = 'handover';
     }
 
-    if (result.reply) {
-      await ChatMessage.create({ business: businessId, conversationId, from: 'ai', number, text: result.reply });
-    }
-
-    const jid = toJid(number);
-
     if (result.action === 'order') {
       const stOrder = this.clients.get(key);
       if (stOrder && stOrder.status === 'connected' && stOrder.sock) {
         try {
           const confirmText = `${result.reply || ''}\n\n✅ Your order is confirmed! We'll get back to you soon.`;
-          await stOrder.sock.sendMessage(jid, { text: confirmText });
+          await this.sendWhatsAppText(stOrder, replyJid, confirmText, 'order-confirm');
         } catch (e) {
           console.error('[wa] order confirm send failed:', e.message);
         }
+      }
+      if (result.reply) {
+        await ChatMessage.create({ business: businessId, conversationId, from: 'ai', number, text: result.reply });
       }
       await this.processOrder(business, number, result);
       return;
@@ -644,7 +673,7 @@ class WhatsAppManager {
     if (result.action === 'handover') {
       const fallback = "I'm not able to help with this one. Let me connect you to our human support right away.";
       const replyText = result.reply || fallback;
-      await st.sock.sendMessage(jid, { text: replyText });
+      await this.sendWhatsAppText(st, replyJid, replyText, 'handover');
       await ChatMessage.create({ business: businessId, conversationId, from: 'ai', number, text: replyText });
       await ChatMessage.create({ business: businessId, conversationId, from: 'system', number, text: HANDOVER_MARKER });
       await this.forwardToOwner(
@@ -656,7 +685,10 @@ class WhatsAppManager {
       return;
     }
 
-    await st.sock.sendMessage(jid, { text: result.reply });
+    if (result.reply) {
+      await this.sendWhatsAppText(st, replyJid, result.reply, 'ai-reply');
+      await ChatMessage.create({ business: businessId, conversationId, from: 'ai', number, text: result.reply });
+    }
     await this.bumpSession(businessId);
   }
 
@@ -699,7 +731,7 @@ class WhatsAppManager {
         .filter(Boolean)
         .join('\n');
       try {
-        await st.sock.sendMessage(toJid(ownerNo), { text: ownerMsg });
+        await this.sendWhatsAppText(st, toJid(ownerNo), ownerMsg, 'owner-order-notify');
       } catch (e) {
         console.error('[wa] owner notify failed:', e.message);
       }
@@ -714,7 +746,7 @@ class WhatsAppManager {
     const ownerNo = normalizeNumber(business.ownerNumber);
     if (!ownerNo || !st?.sock) return;
     try {
-      await st.sock.sendMessage(toJid(ownerNo), { text: `📨 From customer +${customerNumber}:\n${text}` });
+      await this.sendWhatsAppText(st, toJid(ownerNo), `📨 From customer +${customerNumber}:\n${text}`, 'owner-forward');
     } catch (e) {
       console.error('[wa] forward failed:', e.message);
     }
@@ -741,16 +773,16 @@ class WhatsAppManager {
     const st = this.clients.get(String(businessId));
     if (!st || st.status !== 'connected' || !st.sock) throw new Error('WhatsApp not connected');
     const number = normalizeNumber(to);
-    await st.sock.sendMessage(toJid(number), { text });
+    await this.sendWhatsAppText(st, toJid(number), text, 'manual-reply');
   }
 
-  async sendIfNeeded(sock, businessId, number, text, conversationId) {
+  async sendIfNeeded(st, businessId, jid, number, text, conversationId) {
     if (!text) return;
     const last = await ChatMessage.findOne({ business: businessId, conversationId })
       .sort({ createdAt: -1 })
       .lean();
     if (last && last.from === 'ai' && last.text === text) return;
-    await sock.sendMessage(toJid(number), { text });
+    await this.sendWhatsAppText(st, jid || toJid(number), text, 'away-message');
   }
 
   async bumpSession(businessId) {
