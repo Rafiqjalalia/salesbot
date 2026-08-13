@@ -6,7 +6,12 @@ dotenv.config({ path: path.join(__dirname, '..', '..', '.env') });
 
 const env = {
   port: parseInt(process.env.PORT || '3000', 10),
-  publicUrl: (process.env.PUBLIC_URL || `http://localhost:${process.env.PORT || 3000}`).replace(/\/+$/, ''),
+  // PUBLIC_URL is the canonical external base; RENDER_EXTERNAL_URL is Render's auto-set fallback.
+  publicUrl: (
+    process.env.PUBLIC_URL ||
+    process.env.RENDER_EXTERNAL_URL ||
+    `http://localhost:${process.env.PORT || 3000}`
+  ).replace(/\/+$/, ''),
   jwtSecret: process.env.JWT_SECRET || 'dev-insecure-secret-change-me',
   mongoUri: process.env.MONGODB_URI || '',
   groqApiKey: process.env.GROQ_API_KEY || '',
