@@ -9,6 +9,8 @@
     "dev": "nodemon src/index.js"
   },
   "dependencies": {
+    "@hapi/boom": "^10.0.1",
+    "@whiskeysockets/baileys": "^7.0.0-rc14",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
@@ -16,9 +18,8 @@
     "jsonwebtoken": "^9.0.2",
     "mongodb-memory-server": "^10.1.2",
     "mongoose": "^8.7.0",
-    "qrcode": "^1.5.4",
-    "whatsapp-web.js": "^1.26.0",
-    "wwebjs-mongo": "^1.1.0"
+    "pino": "^10.3.1",
+    "qrcode": "^1.5.4"
   },
   "devDependencies": {
     "nodemon": "^3.1.7"
