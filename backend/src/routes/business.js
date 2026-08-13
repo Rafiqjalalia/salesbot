@@ -75,7 +75,15 @@ router.get('/connect/status', async (req, res) => {
         console.error(`[connect] auto-reconnect failed for ${key}:`, (e && e.message) || e)
       );
     }
-    return res.json({ status: 'connecting', qr: null, pairingCode: null, error: '' });
+    // Reflect the persisted DB status so the UI updates after QR scan even while the
+    // in-memory client is still booting (or was lost to a restart/OOM).
+    const dbStatus = business.whatsappStatus === 'connected' ? 'connecting' : business.whatsappStatus;
+    return res.json({
+      status: dbStatus,
+      qr: null,
+      pairingCode: null,
+      error: business.whatsappError || '',
+    });
   }
 
   const state = st || { status: business.whatsappStatus, qr: null, pairingCode: null, lastError: business.whatsappError };
